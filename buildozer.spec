@@ -23,7 +23,10 @@ version = 1.0
 
 # (list) Application requirements
 # yt-dlp, requests, certifi are pure python and installable via pip during the p4a build
-requirements = python3,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android
+# مثبتين python3==3.11.8 عشان يطابق Cython 0.29.33 اللي بيبني Kivy 2.3.0
+# لو سبناها من غير تثبيت، p4a بيجيب أحدث بايثون (3.14) واللي فيه تغييرات
+# في الـ C API (_PyLong_AsByteArray) مش متوافقة مع كود Cython 0.29 القديم
+requirements = python3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/data/presplash.png
@@ -38,7 +41,9 @@ orientation = portrait
 android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,FOREGROUND_SERVICE,WAKE_LOCK,POST_NOTIFICATIONS
 
 # (list) The Android archs to build for
-android.archs = arm64-v8a,armeabi-v7a
+# مبني لمعمار واحد بس (arm64-v8a) - بيغطي كل الموبايلات الحديثة من 2017 لحد دلوقتي
+# وده بيقلل وقت البناء وفرصة الأخطاء لأنه بيبني نسخة واحدة بس مش اتنين
+android.archs = arm64-v8a
 
 # (int) Target Android API
 android.api = 34
