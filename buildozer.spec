@@ -23,10 +23,9 @@ version = 1.0
 
 # (list) Application requirements
 # yt-dlp, requests, certifi are pure python and installable via pip during the p4a build
-# مثبتين python3==3.11.8 عشان يطابق Cython 0.29.33 اللي بيبني Kivy 2.3.0
-# لو سبناها من غير تثبيت، p4a بيجيب أحدث بايثون (3.14) واللي فيه تغييرات
-# في الـ C API (_PyLong_AsByteArray) مش متوافقة مع كود Cython 0.29 القديم
-requirements = python3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android
+# لازم hostpython3 (بايثون البناء) و python3 (بايثون الهدف) يكونوا نفس النسخة بالظبط
+# دي متطلبة أساسية من python-for-android، لو مش متطابقين البناء بيفشل فورًا
+requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/data/presplash.png
