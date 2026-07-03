@@ -100,13 +100,23 @@ class YTDownloaderApp(App):
         threading.Thread(target=self.analyze, daemon=True).start()
 
     def analyze(self):
-        self.set_widget_text(self.btn_paste, "Analysing")
+        # تعديل الواجهة (widget.text) لازم يحصل على الـ Main Thread بس.
+        # تعديله مباشرة من الـ background thread ده كان بيسبب crash على أندرويد.
+        Clock.schedule_once(lambda dt: self.set_widget_text(self.btn_paste, "Analysing"))
         try:
             url = Clipboard.paste()
             self.picked_url = url
             small_size = 2000
             chosen_id = ""
-            with YoutubeDL({}) as ydl:
+            # cachedir=False: بيمنع yt-dlp من محاولة الكتابة على ملفات cache
+            # ممكن ماتكونش متاحة للكتابة جوه بيئة أندرويد وتسبب مشاكل
+            ydl_opts = {
+                "cachedir": False,
+                "quiet": True,
+                "no_warnings": True,
+                "noplaylist": True,
+            }
+            with YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
                 for f in info.get("formats", []):
                     if f.get("format_id") in FORMAT_IDS:
