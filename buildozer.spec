@@ -37,7 +37,7 @@ requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,c
 orientation = portrait
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,WAKE_LOCK,POST_NOTIFICATIONS
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,MANAGE_EXTERNAL_STORAGE,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,WAKE_LOCK,POST_NOTIFICATIONS
 
 # (list) The Android archs to build for
 # مبني لمعمار واحد بس (arm64-v8a) - بيغطي كل الموبايلات الحديثة من 2017 لحد دلوقتي
