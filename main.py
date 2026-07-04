@@ -176,8 +176,41 @@ class YTDownloaderApp(App):
         if not self.chosen_format_id or not self.picked_url:
             self.set_status("Please analyze link first")
             return
+        if platform == "android" and not self.has_storage_permission():
+            self.set_status("Please allow file access, then press Download again")
+            self.request_storage_permission()
+            return
         self.set_status("Starting background download service...")
         self.start_download_service()
+
+    # ------------------------------------------------------------
+    # صلاحية "الوصول لكل الملفات" لازمة عشان نكتب في مجلد Download
+    # العام على أندرويد 10+ (Scoped Storage). الصلاحية دي مينفعش
+    # تتاخد بمجرد نافذة "Allow" عادية، لازم المستخدم يفعّلها يدويًا
+    # من صفحة إعدادات خاصة، فبنفتحله الصفحة دي مباشرة.
+    # ------------------------------------------------------------
+    def has_storage_permission(self):
+        try:
+            from jnius import autoclass
+            Environment = autoclass("android.os.Environment")
+            return bool(Environment.isExternalStorageManager())
+        except Exception:
+            return True  # على أندرويد قديم (قبل 11) الصلاحية العادية كافية
+
+    def request_storage_permission(self):
+        try:
+            from jnius import autoclass
+            Intent = autoclass("android.content.Intent")
+            Settings = autoclass("android.provider.Settings")
+            Uri = autoclass("android.net.Uri")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity = PythonActivity.mActivity
+            intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+            uri = Uri.parse("package:" + activity.getPackageName())
+            intent.setData(uri)
+            activity.startActivity(intent)
+        except Exception as e:
+            self.set_status(f"Error opening settings: {e}")
 
     def start_download_service(self):
         if platform != "android":
