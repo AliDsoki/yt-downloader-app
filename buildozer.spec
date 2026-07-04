@@ -13,7 +13,7 @@ package.domain = org.alidsoki
 source.dir = .
 
 # (list) Source files to include (let empty to include all the files)
-source.include_exts = py,png,jpg,jpeg,kv,atlas,json
+source.include_exts = py,png,jpg,jpeg,kv,atlas,json,ttf
 
 # (list) List of inclusions using pattern matching
 #source.include_patterns = assets/*,images/*.png
@@ -25,7 +25,7 @@ version = 1.0
 # yt-dlp, requests, certifi are pure python and installable via pip during the p4a build
 # لازم hostpython3 (بايثون البناء) و python3 (بايثون الهدف) يكونوا نفس النسخة بالظبط
 # دي متطلبة أساسية من python-for-android، لو مش متطابقين البناء بيفشل فورًا
-requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android
+requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android,arabic_reshaper,python-bidi
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/data/presplash.png
@@ -37,7 +37,7 @@ requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,c
 orientation = portrait
 
 # (list) Permissions
-android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,FOREGROUND_SERVICE,WAKE_LOCK,POST_NOTIFICATIONS
+android.permissions = INTERNET,WRITE_EXTERNAL_STORAGE,READ_EXTERNAL_STORAGE,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,WAKE_LOCK,POST_NOTIFICATIONS
 
 # (list) The Android archs to build for
 # مبني لمعمار واحد بس (arm64-v8a) - بيغطي كل الموبايلات الحديثة من 2017 لحد دلوقتي
@@ -67,7 +67,7 @@ android.release_artifact = apk
 # الصيغة: <اسم الخدمة كما هتتنادى من main.py> : <مسار ملف السيرفس> : foreground
 # main.py بيعمل autoclass باسم "ServiceYtservice" لذلك اسم الخدمة هنا لازم يكون "ytservice"
 # --------------------------------------------------------------------
-services = ytservice:service.py:foreground
+services = ytservice:service.py:foreground:foregroundServiceType=dataSync
 
 [buildozer]
 
