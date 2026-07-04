@@ -49,6 +49,12 @@ STATUS_FILE = os.path.join(
     os.environ.get("ANDROID_PRIVATE", os.path.expanduser("~")), "download_status.json"
 ) if platform == "android" else "download_status.json"
 
+# ملف بنحفظ فيه الـ URI بتاع مجلد التخزين اللي المستخدم اختاره يدويًا
+# (Storage Access Framework) عشان نفتكره حتى لو التطبيق اتقفل وفتح تاني
+STORAGE_PREF_FILE = os.path.join(
+    os.environ.get("ANDROID_PRIVATE", os.path.expanduser("~")), "storage_uri.txt"
+) if platform == "android" else "storage_uri.txt"
+
 
 class Root(BoxLayout):
     pass
@@ -60,6 +66,8 @@ class YTDownloaderApp(App):
         self.picked_url = ""
         self.chosen_format_id = ""
         self.video_title = ""
+        # لو المستخدم كان اختار مجلد تخزين قبل كده، بنقرأه من الملف
+        self.storage_uri = self.load_storage_uri()
 
         root = BoxLayout(orientation="vertical", padding=20, spacing=15)
 
@@ -82,6 +90,18 @@ class YTDownloaderApp(App):
         )
         self.btn_download.bind(on_release=self.on_download_pressed)
         root.add_widget(self.btn_download)
+
+        # زرار اختيار مجلد التخزين يدويًا (بديل عن صلاحية "الوصول لكل
+        # الملفات" اللي بتحتاج تفعيل يدوي معقد من الإعدادات)
+        self.btn_choose_folder = Button(
+            text="Folder selected" if self.storage_uri else "Choose storage folder",
+            font_size="20sp",
+            size_hint=(1, 0.12),
+            background_color=(0.18, 0.18, 0.18, 1),
+            color=(0.9, 0.9, 0.9, 1),
+        )
+        self.btn_choose_folder.bind(on_release=self.on_choose_folder_pressed)
+        root.add_widget(self.btn_choose_folder)
 
         self.thumb = AsyncImage(size_hint=(1, 0.3))
         root.add_widget(self.thumb)
@@ -190,6 +210,10 @@ class YTDownloaderApp(App):
     # من صفحة إعدادات خاصة، فبنفتحله الصفحة دي مباشرة.
     # ------------------------------------------------------------
     def has_storage_permission(self):
+        # لو المستخدم سبق واختار مجلد تخزين يدويًا (SAF)، ده كافي تمامًا
+        # ومش محتاجين نطلب صلاحية "الوصول لكل الملفات" خالص
+        if self.storage_uri:
+            return True
         try:
             from jnius import autoclass
             Environment = autoclass("android.os.Environment")
@@ -212,6 +236,85 @@ class YTDownloaderApp(App):
         except Exception as e:
             self.set_status(f"Error opening settings: {e}")
 
+    # ------------------------------------------------------------
+    # اختيار مجلد التخزين يدويًا (Storage Access Framework)
+    # الطريقة دي بتاخد إذن دائم (Persistable URI Permission) على مجلد
+    # يختاره المستخدم بنفسه، فمش محتاجين صلاحية "الوصول لكل الملفات"
+    # (MANAGE_EXTERNAL_STORAGE) اللي محتاجة تفعيل يدوي معقد من الإعدادات
+    # وبترفض على أجهزة كتير.
+    # ------------------------------------------------------------
+    def load_storage_uri(self):
+        try:
+            if os.path.exists(STORAGE_PREF_FILE):
+                with open(STORAGE_PREF_FILE, "r", encoding="utf-8") as f:
+                    return f.read().strip()
+        except Exception:
+            pass
+        return ""
+
+    def save_storage_uri(self, uri_str):
+        try:
+            with open(STORAGE_PREF_FILE, "w", encoding="utf-8") as f:
+                f.write(uri_str)
+        except Exception:
+            pass
+
+    def on_choose_folder_pressed(self, *_):
+        if platform != "android":
+            self.set_status("Folder picker only works on Android device")
+            return
+        try:
+            from jnius import autoclass
+            from android import activity
+
+            Intent = autoclass("android.content.Intent")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity_instance = PythonActivity.mActivity
+
+            intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+
+            # بنسجل الكولباك اللي هيتنفذ لما المستخدم يختار المجلد ويرجع
+            # للتطبيق (onActivityResult) - نفس فكرة الـ Intent بتاع الإعدادات
+            activity.bind(on_activity_result=self.on_folder_picked)
+            activity_instance.startActivityForResult(intent, 4321)
+        except Exception as e:
+            self.set_status(f"Error opening folder picker: {e}")
+
+    def on_folder_picked(self, request_code, result_code, intent):
+        if request_code != 4321:
+            return
+        try:
+            from jnius import autoclass
+
+            Activity = autoclass("android.app.Activity")
+            if result_code != Activity.RESULT_OK or intent is None:
+                Clock.schedule_once(lambda dt: self.set_status("Folder selection cancelled"))
+                return
+
+            Intent = autoclass("android.content.Intent")
+            PythonActivity = autoclass("org.kivy.android.PythonActivity")
+            activity_instance = PythonActivity.mActivity
+
+            uri = intent.getData()
+            take_flags = intent.getFlags() & (
+                Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            )
+            # بنثبّت الإذن ده بشكل دائم عشان يفضل شغال حتى بعد إعادة تشغيل
+            # الجهاز أو قفل وفتح التطبيق تاني
+            activity_instance.getContentResolver().takePersistableUriPermission(uri, take_flags)
+
+            uri_str = uri.toString()
+            self.storage_uri = uri_str
+            self.save_storage_uri(uri_str)
+            Clock.schedule_once(lambda dt: self.set_widget_text(self.btn_choose_folder, "Folder selected"))
+            Clock.schedule_once(lambda dt: self.set_status("Storage folder saved"))
+        except Exception as e:
+            error_msg = str(e)
+            Clock.schedule_once(lambda dt: self.set_status(f"Error saving folder: {error_msg}"))
+
     def start_download_service(self):
         if platform != "android":
             self.set_status("Service only runs on Android device")
@@ -231,6 +334,7 @@ class YTDownloaderApp(App):
             "url": self.picked_url,
             "format_id": self.chosen_format_id,
             "title": self.video_title,
+            "storage_uri": self.storage_uri,
         })
         ServiceClass.start(activity, argument)
 
