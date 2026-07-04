@@ -132,7 +132,11 @@ class YTDownloaderApp(App):
                 lambda dt: self.on_analyze_done(small_size, info.get("thumbnail", ""))
             )
         except Exception as e:
-            Clock.schedule_once(lambda dt: self.set_status(f"Error: {e}"))
+            # لازم نحول الخطأ لنص عادي هنا فورًا، لأن بايثون بيمسح متغير 'e'
+            # تلقائيًا أول ما نخرج من كتلة except، وlambda هنا بتتنفذ لاحقًا
+            # (بعد ما نخرج من except بكتير)، فكانت بتحصل NameError وتقفل التطبيق
+            error_msg = str(e)
+            Clock.schedule_once(lambda dt: self.set_status(f"Error: {error_msg}"))
             Clock.schedule_once(lambda dt: self.set_widget_text(self.btn_paste, "Pick up link"))
 
     def on_analyze_done(self, size_mb, thumb_url):
