@@ -21,7 +21,28 @@ from kivy.utils import platform
 
 from yt_dlp import YoutubeDL
 
+import arabic_reshaper
+from bidi.algorithm import get_display
+
 FORMAT_IDS = ("249-drc", "250-drc", "249", "250", "140-drc", "251-drc", "140", "251")
+
+# مسار الخط اللي بيدعم العربي - لازم يكون موجود جوه مجلد assets بجانب main.py
+FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "NotoNaskhArabic-Regular.ttf")
+
+
+def to_display_text(text):
+    """
+    Kivy بيرسم كل حرف عربي لوحده من غير ما يوصل الحروف ببعضها (شكل الحرف
+    المنفصل بس)، فالنص بيبان متقطّع. الدالة دي بتعمل "reshape" (تحويل كل حرف
+    للشكل الصحيح حسب موقعه في الكلمة) و"bidi" (ترتيب العرض من اليمين لليسار)
+    قبل ما نحطه في أي Label.
+    """
+    try:
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    except Exception:
+        return text
+
 
 # ملف مؤقت بيستخدمه السيرفس عشان يبعت تحديثات (تقدم التحميل) للواجهة
 STATUS_FILE = os.path.join(
@@ -66,9 +87,11 @@ class YTDownloaderApp(App):
         root.add_widget(self.thumb)
 
         # لابل اسم الفيديو - بيدعم العربي والإنجليزي والنص الطويل عن طريق text_size
+        # font_name هنا لازم يكون خط بيدعم رموز العربي، وإلا هتظهر مربعات فاضية
         self.title_label = Label(
             text="",
             font_size="18sp",
+            font_name=FONT_PATH,
             size_hint=(1, 0.15),
             halign="center",
             valign="middle",
@@ -141,7 +164,7 @@ class YTDownloaderApp(App):
 
     def on_analyze_done(self, size_mb, thumb_url):
         self.btn_download.text = f"Size : {size_mb} MB"
-        self.title_label.text = self.video_title
+        self.title_label.text = to_display_text(self.video_title)
         if thumb_url:
             self.thumb.source = thumb_url
         self.set_widget_text(self.btn_paste, "Pick up link")
@@ -162,20 +185,21 @@ class YTDownloaderApp(App):
             return
         from jnius import autoclass
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
-        Intent = autoclass("android.content.Intent")
         activity = PythonActivity.mActivity
         ServiceClass = autoclass(
             "{}.ServiceYtservice".format(activity.getPackageName())
         )
-        intent = Intent(activity, ServiceClass)
-        intent.putExtra("url", self.picked_url)
-        intent.putExtra("format_id", self.chosen_format_id)
-        intent.putExtra("title", self.video_title)
-        # في أندرويد 8+ لازم نستخدم startForegroundService
-        try:
-            activity.startForegroundService(intent)
-        except Exception:
-            activity.startService(intent)
+        # لازم نستخدم service.start() الرسمية بدل بناء Intent يدويًا.
+        # الطريقة اليدوية كانت بتنسى extras داخلية لازمة لـ python-for-android
+        # (زي serviceStartAsForeground) وده كان بيسبب NullPointerException
+        # وبيقفل السيرفس فورًا. service.start() بتظبط كل ده تلقائيًا.
+        # بما إن الوسيط argument نص واحد بس، بنبعت البيانات كـ JSON.
+        argument = json.dumps({
+            "url": self.picked_url,
+            "format_id": self.chosen_format_id,
+            "title": self.video_title,
+        })
+        ServiceClass.start(activity, argument)
 
     # ------------------------------------------------------------
     # قراءة تقدم التحميل من ملف بيكتبه السيرفس (بروسس منفصل)
