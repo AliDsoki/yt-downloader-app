@@ -64,22 +64,25 @@ def acquire_wakelock():
 
 
 def run():
-    from android import AndroidService  # p4a helper for foreground notification
-
-    android_service = AndroidService("YT Downloader", "Downloading in background...")
-    android_service.start("Download started")
-
     wake_lock = None
     try:
         wake_lock = acquire_wakelock()
 
-        url = os.environ.get("PY_SERVICE_ARGUMENT", "")
-        # الطريقة الأساسية لتمرير المعاملات لخدمة p4a هي عبر Intent extras.
-        # نقرأها هنا من خلال الـ Intent المرفق بالخدمة (service.getIntent()).
-        intent = service.getIntent()
-        url = intent.getStringExtra("url") or url
-        format_id = intent.getStringExtra("format_id") or ""
-        title = intent.getStringExtra("title") or "video"
+        # الطريقة الرسمية لتمرير البيانات لخدمة p4a: main.py بيبعتها
+        # كنص JSON واحد عن طريق service.start(activity, argument)،
+        # وبتوصلنا هنا من خلال متغير البيئة PYTHON_SERVICE_ARGUMENT.
+        # (الاعتماد على service.getIntent() أو AndroidService هنا كان غلط:
+        # الخدمة دلوقتي شغالة كـ foreground عن طريق buildozer.spec مباشرة
+        # فمفيش حاجة تانية لازم تشغّلها بنفسها.)
+        raw_argument = os.environ.get("PYTHON_SERVICE_ARGUMENT", "{}")
+        try:
+            data = json.loads(raw_argument)
+        except (ValueError, TypeError):
+            data = {}
+
+        url = data.get("url", "")
+        format_id = data.get("format_id", "")
+        title = data.get("title", "video")
 
         write_status("starting", 0.0)
 
@@ -95,15 +98,10 @@ def run():
             ydl.download([url])
 
         write_status("download finished", 100.0)
-        android_service.stop("Download finished")
 
     except Exception as e:
         write_status(f"Error: {e}", 0.0)
         traceback.print_exc()
-        try:
-            android_service.stop("Download failed")
-        except Exception:
-            pass
     finally:
         if wake_lock is not None:
             try:
