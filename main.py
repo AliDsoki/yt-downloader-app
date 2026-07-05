@@ -44,7 +44,7 @@ import dl_common as C
 # خط Cairo بيغطي العربي + الإنجليزي + الأرقام + الرموز في ملف واحد،
 # فمحتاجينش نخلط خطين مع بعض ولا نستخدم Markup لحل مشكلة المربعات
 # الفاضية - أي نص (عربي أو إنجليزي أو مختلط) هيتعرض صح بنفس الخط ده.
-FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "Cairo-Regular.ttf")
+FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ScheherazadeNew-SemiBold.ttf")
 
 
 def ar(text):
