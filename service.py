@@ -155,6 +155,18 @@ def download_worker(job):
             raise Exception("Download finished but output file not found")
         local_path = max(result_files, key=os.path.getmtime)
 
+        # لو التحميل ده صوت فقط (أقل/أعلى جودة صوت)، بنغيّر امتداد الملف
+        # لـ .mp3 مباشرة من غير أي إعادة ترميز (re-encode) - يعني الملف
+        # لسه بنفس الترميز الأصلي (opus/m4a/webm) بس الامتداد .mp3 فقط،
+        # زي ما طلب المستخدم بالظبط.
+        quality_key = job.get("quality_key", "")
+        if quality_key in ("worst_audio", "best_audio"):
+            base_path, _old_ext = os.path.splitext(local_path)
+            mp3_path = base_path + ".mp3"
+            if mp3_path != local_path:
+                os.replace(local_path, mp3_path)
+                local_path = mp3_path
+
         update_status(job_id, status="saving", percent=100.0)
         storage_uri = job.get("storage_uri", "")
         playlist_name = job.get("playlist_name") or None
