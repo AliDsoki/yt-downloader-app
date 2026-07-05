@@ -13,17 +13,15 @@ from kivy.config import Config
 # وأزرار التنقل السفلية ظاهرة زي أي تطبيق عادي
 Config.set("graphics", "fullscreen", "0")
 
-from kivy.core.window import Window
-
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.factory import Factory
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.behaviors import ToggleButtonBehavior
 from kivy.uix.label import Label
 from kivy.uix.button import Button
+from kivy.uix.behaviors import ToggleButtonBehavior
 from kivy.uix.textinput import TextInput
 from kivy.uix.image import AsyncImage
 from kivy.uix.progressbar import ProgressBar
@@ -43,16 +41,22 @@ from bidi.algorithm import get_display
 
 import dl_common as C
 
-# مسار الخط اللي بيدعم العربي - لازم يكون موجود جوه مجلد assets بجانب main.py
-FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "AppFont.ttf")
+# خط Cairo بيغطي العربي + الإنجليزي + الأرقام + الرموز في ملف واحد،
+# فمحتاجينش نخلط خطين مع بعض ولا نستخدم Markup لحل مشكلة المربعات
+# الفاضية - أي نص (عربي أو إنجليزي أو مختلط) هيتعرض صح بنفس الخط ده.
+FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "Cairo-Regular.ttf")
 
 
 def ar(text):
     """
     Kivy بيرسم كل حرف عربي لوحده من غير ما يوصل الحروف ببعضها، فالنص
-    بيبان متقطّع. الدالة دي بتعمل reshape + bidi قبل الحط في أي نص عربي
-    (سواء عنوان فيديو أو أي نص ثابت في الواجهة).
+    بيبان متقطّع. الدالة دي بتعمل reshape + bidi قبل الحط في أي Label.
+    مهم: تتنادى مرة واحدة بس على النص الكامل (بما فيه أي أرقام/إنجليزي
+    مدموجة فيه)، مش على أجزاء منفصلة بيتم لزقها ببعض بعدين - النداء
+    عليها مرتين أو تقطيع النص قبل ما نبعتله بيسبب ظهور النص بترتيب غلط.
     """
+    if not text:
+        return ""
     try:
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
@@ -66,7 +70,7 @@ def ar(text):
 # ------------------------------------------------------------
 KV = """
 <Card>:
-    padding: dp(12)
+    padding: [dp(12), dp(16), dp(12), dp(12)]
     spacing: dp(10)
     canvas.before:
         Color:
@@ -112,40 +116,49 @@ KV = """
 
 <QualityToggle>:
     bg_color: (0.22, 0.62, 0.36, 1) if self.state == "down" else (0.26, 0.26, 0.30, 1)
+    opacity: 0.45 if self.disabled else 1
     canvas.before:
         Color:
             rgba: 0, 0, 0, 0.55
         RoundedRectangle:
-            pos: self.x, (self.y - dp(4)) if self.state == "normal" else (self.y - dp(1))
+            pos: self.x, (self.y - dp(3)) if self.state == "normal" else (self.y - dp(1))
             size: self.size
-            radius: [dp(12)]
+            radius: [dp(10)]
         Color:
             rgba: self.bg_color
         RoundedRectangle:
-            pos: self.x, (self.y + dp(3)) if self.state == "normal" else self.y
+            pos: self.x, (self.y + dp(2)) if self.state == "normal" else self.y
             size: self.size
-            radius: [dp(12)]
+            radius: [dp(10)]
         Color:
             rgba: 1, 1, 1, 0.16
         RoundedRectangle:
-            pos: self.x, ((self.y + dp(3)) if self.state == "normal" else self.y) + self.height * 0.5
+            pos: self.x, ((self.y + dp(2)) if self.state == "normal" else self.y) + self.height * 0.5
             size: self.width, self.height * 0.5
-            radius: [dp(12), dp(12), 0, 0]
+            radius: [dp(10), dp(10), 0, 0]
     Label:
-        text: root.quality_name
-        font_size: "10sp"
+        text: root.label_text
         font_name: app.font_path
-        color: (1, 1, 1, 0.85) if not root.disabled else (0.6, 0.6, 0.6, 0.85)
-        size_hint: None, None
-        size: self.texture_size
-        pos: root.x + dp(6), root.top - self.height - dp(4)
+        font_size: "10sp"
+        size_hint: (0.82, 0.38)
+        pos_hint: {"x": 0.05, "top": 0.95}
+        halign: "left"
+        valign: "top"
+        text_size: self.size
+        shorten: True
+        color: 1, 1, 1, 0.75
     Label:
         text: root.size_text
-        font_size: "14sp"
         font_name: app.font_path
+        font_size: "14sp"
         bold: True
-        color: (1, 1, 1, 1) if not root.disabled else (0.6, 0.6, 0.6, 1)
-        center: root.center_x, root.center_y - dp(4)
+        size_hint: (0.9, 0.5)
+        pos_hint: {"center_x": 0.5, "center_y": 0.36}
+        halign: "center"
+        valign: "middle"
+        text_size: self.size
+        shorten: True
+        color: 1, 1, 1, 1
 
 <SmallButton3D@Button3D>:
     font_size: "13sp"
@@ -153,6 +166,7 @@ KV = """
 <DownloadCard>:
     orientation: "vertical"
     size_hint_y: None
+    height: dp(120)
     padding: dp(10)
     spacing: dp(6)
     canvas.before:
@@ -181,7 +195,7 @@ class Button3D(Button):
 
 class QualityToggle(ToggleButtonBehavior, FloatLayout):
     bg_color = ListProperty([0.26, 0.26, 0.30, 1])
-    quality_name = StringProperty("")
+    label_text = StringProperty("")
     size_text = StringProperty("")
 
 
@@ -211,11 +225,6 @@ class YTDownloaderApp(App):
         self.playlist_title = ""
 
         root = TabbedPanel(do_default_tab=False)
-        # التابين لازم ياخدوا نص عرض الشاشة بالتساوي، مش عرض ثابت بيسيب
-        # فراغ جنبهم. بنربط tab_width بنص عرض اللوحة، ونحدثه لو الشاشة
-        # اتدارت (landscape/portrait) أو تغيّر حجمها.
-        root.tab_width = Window.width / 2
-        root.bind(width=lambda inst, w: setattr(inst, "tab_width", w / 2))
 
         download_tab = TabbedPanelItem(text=ar("تحميل"))
         download_tab.font_name = FONT_PATH
@@ -227,6 +236,12 @@ class YTDownloaderApp(App):
         settings_tab.content = self.build_settings_tab()
         root.add_widget(settings_tab)
 
+        def _fit_tab_width(*_):
+            root.tab_width = root.width / 2.0
+
+        root.bind(width=_fit_tab_width)
+        Clock.schedule_once(_fit_tab_width)
+
         Clock.schedule_interval(self.poll_downloads, 0.5)
         Clock.schedule_interval(self.refresh_logs, 2.0)
 
@@ -236,7 +251,7 @@ class YTDownloaderApp(App):
     # تبويب التحميل الرئيسي
     # ==============================================================
     def build_download_tab(self):
-        layout = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(12))
+        layout = BoxLayout(orientation="vertical", padding=dp(14), spacing=dp(18))
 
         self.btn_analyze = Button3D(
             text=ar("التقط الرابط وحلّل"),
@@ -248,9 +263,8 @@ class YTDownloaderApp(App):
         layout.add_widget(self.btn_analyze)
 
         # ---------------- بطاقة نتيجة التحليل + اختيار الجودة ----------------
-        # الارتفاع بيُحسب أوتوماتيك من محتواها (minimum_height) بدل قيمة
-        # ثابتة، لأن القيمة الثابتة القديمة كانت أصغر من المحتوى الفعلي
-        # وده كان بيخلي المحتوى يفيض ويتراكب مع زر التحليل اللي فوقها
+        # الارتفاع بيتحدد تلقائيًا حسب المحتوى (مش رقم ثابت) عشان أي عنصر
+        # (صورة/صف قائمة تشغيل) يظهر أو يختفي من غير ما يغطي حاجة تانية
         self.analyze_card = Card(orientation="vertical", size_hint=(1, None))
         self.analyze_card.bind(minimum_height=self.analyze_card.setter("height"))
 
@@ -272,28 +286,35 @@ class YTDownloaderApp(App):
 
         # ---------------- صف اختيار نطاق قائمة تشغيل (يظهر بس لو الرابط قائمة) ----------------
         self.playlist_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=0, spacing=dp(8), opacity=0)
-        self.playlist_row.add_widget(Label(text=ar("من فيديو رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.4, 1)))
-        self.input_from = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", size_hint=(0.25, 1))
+
+        lbl_from = Label(text=ar("من فيديو رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.38, 1), halign="right", valign="middle")
+        lbl_from.bind(size=lambda inst, s: setattr(inst, "text_size", s))
+        self.playlist_row.add_widget(lbl_from)
+        self.input_from = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", halign="center", size_hint=(0.24, 1))
         self.playlist_row.add_widget(self.input_from)
-        self.playlist_row.add_widget(Label(text=ar("إلى رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.15, 1)))
-        self.input_to = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", size_hint=(0.25, 1))
+
+        lbl_to = Label(text=ar("إلى رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.16, 1), halign="right", valign="middle")
+        lbl_to.bind(size=lambda inst, s: setattr(inst, "text_size", s))
+        self.playlist_row.add_widget(lbl_to)
+        self.input_to = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", halign="center", size_hint=(0.22, 1))
         self.playlist_row.add_widget(self.input_to)
         self.analyze_card.add_widget(self.playlist_row)
 
-        # صف الصوت (2 زرار)
+        # صف الصوت (2 زرار) وصفين فيديو (3 أزرار لكل صف) - ارتفاع أقل
+        # عشان يسيب مساحة أكبر لشاشة التحميلات تحت
         row_audio = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
-        # صفين فيديو (3 أزرار لكل صف)
         row_video_1 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
         row_video_2 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
 
         rows_map = [row_audio, row_audio, row_video_1, row_video_1, row_video_1, row_video_2, row_video_2, row_video_2]
         self.quality_buttons = []
         for idx, (key, label) in enumerate(C.QUALITY_LABELS):
-            display_name = label if key.isdigit() else ar(label)
-            btn = QualityToggle(group="quality_select", quality_name=display_name)
+            btn = QualityToggle(group="quality_select")
             btn.quality_key = key
             btn.base_label = label
             btn.quality_index = idx
+            btn.label_text = ar(label)
+            btn.size_text = ""
             if idx == self.selected_quality_index:
                 btn.state = "down"
             btn.bind(on_release=self.on_quality_selected)
@@ -443,13 +464,15 @@ class YTDownloaderApp(App):
     def copy_log_to_clipboard(self, path):
         content = C.read_log(path)
         Clipboard.copy(content)
-        self.set_status(ar("تم نسخ السجل"))
+        self.set_status("تم نسخ السجل")
 
     def refresh_logs(self, dt):
         if hasattr(self, "download_log_label"):
-            self.download_log_label.text = C.read_log(C.DOWNLOAD_LOG_FILE) or ar("(فارغ)")
+            content = C.read_log(C.DOWNLOAD_LOG_FILE)
+            self.download_log_label.text = ar(content) if content else ar("(فارغ)")
         if hasattr(self, "error_log_label"):
-            self.error_log_label.text = C.read_log(C.ERROR_LOG_FILE) or ar("(فارغ)")
+            content = C.read_log(C.ERROR_LOG_FILE)
+            self.error_log_label.text = ar(content) if content else ar("(فارغ)")
 
     # ==============================================================
     # زر تصفير سجل التحميلات
@@ -466,7 +489,7 @@ class YTDownloaderApp(App):
 
         C.clear_log(C.DOWNLOAD_LOG_FILE)
         C.clear_log(C.ERROR_LOG_FILE)
-        self.set_status(ar("تم تنظيف السجل"))
+        self.set_status("تم تنظيف السجل")
 
     # ==============================================================
     # التحليل
@@ -531,8 +554,8 @@ class YTDownloaderApp(App):
             self.thumb.size = (0, 0)
             self.thumb.opacity = 0
 
-        # تحديث لابل الحجم في كل زرار جودة (لو فيديو مفرد) أو من غيره
-        # (لو قائمة تشغيل، مش هنعرف حجم كل فيديو مقدمًا)
+        # تحديث حجم كل جودة (لو فيديو مفرد) أو من غيره لو قائمة تشغيل
+        # (مش هنعرف حجم كل فيديو فيها مقدمًا)
         for btn in self.quality_buttons:
             key = btn.quality_key
             if not self.is_playlist:
@@ -555,7 +578,7 @@ class YTDownloaderApp(App):
             self.input_from.text = "1"
             self.input_to.text = str(count) if count else "1"
             self.btn_add_queue.text = ar("حمّل النطاق المحدد")
-            self.set_status(ar(f"قائمة تشغيل بها {count} فيديو"))
+            self.set_status(f"قائمة تشغيل بها {count} فيديو")
         else:
             self.playlist_row.height = 0
             self.playlist_row.opacity = 0
@@ -568,10 +591,10 @@ class YTDownloaderApp(App):
     # ==============================================================
     def on_add_to_queue(self, *_):
         if not self.picked_url or not self.video_title:
-            self.set_status(ar("حلّل رابط أولًا"))
+            self.set_status("حلّل رابط أولًا")
             return
         if platform == "android" and not self.has_storage_permission():
-            self.set_status(ar("من فضلك اسمح بالوصول للملفات ثم اضغط تاني"))
+            self.set_status("من فضلك اسمح بالوصول للملفات ثم اضغط تاني")
             self.request_storage_permission()
             return
 
@@ -584,9 +607,20 @@ class YTDownloaderApp(App):
         key, label = C.QUALITY_LABELS[self.selected_quality_index]
         option = self.quality_data.get(key)
         if not option:
-            self.set_status(ar("الجودة دي مش متاحة لهذا الفيديو"))
+            self.set_status("الجودة دي مش متاحة لهذا الفيديو")
             return
         format_selector, size_mb = option
+
+        active_statuses = ("queued", "downloading", "paused", "merging", "saving")
+        queue = C.read_json(C.QUEUE_FILE, [])
+        for j in queue:
+            if (
+                j.get("url") == self.picked_url
+                and j.get("quality_key") == key
+                and j.get("status") in active_statuses
+            ):
+                self.set_status("الفيديو ده بنفس الجودة دي موجود بالفعل في التحميلات")
+                return
 
         job = {
             "id": uuid.uuid4().hex,
@@ -599,24 +633,23 @@ class YTDownloaderApp(App):
             "playlist_name": "",
             "status": "queued",
         }
-        queue = C.read_json(C.QUEUE_FILE, [])
         queue.append(job)
         C.write_json(C.QUEUE_FILE, queue)
         C.append_download_log(f"{job['title']} ({label}, {size_mb} MB) - queued")
 
         self.start_download_service()
-        self.set_status(ar("تمت الإضافة للتحميل"))
+        self.set_status("تمت الإضافة للتحميل")
 
     def enqueue_playlist_range(self):
         count = len(self.playlist_entries)
         if count == 0:
-            self.set_status(ar("مفيش فيديوهات في القائمة دي"))
+            self.set_status("مفيش فيديوهات في القائمة دي")
             return
         try:
             from_idx = int(self.input_from.text or "1")
             to_idx = int(self.input_to.text or str(count))
         except ValueError:
-            self.set_status(ar("اكتب أرقام صحيحة للنطاق"))
+            self.set_status("اكتب أرقام صحيحة للنطاق")
             return
 
         from_idx = max(1, min(from_idx, count))
@@ -627,13 +660,24 @@ class YTDownloaderApp(App):
         key, label = C.QUALITY_LABELS[self.selected_quality_index]
         playlist_folder = C.sanitize_name(self.playlist_title)
 
+        active_statuses = ("queued", "downloading", "paused", "merging", "saving")
         queue = C.read_json(C.QUEUE_FILE, [])
+        existing_active = {
+            (j.get("url"), j.get("quality_key"))
+            for j in queue
+            if j.get("status") in active_statuses
+        }
+
         added = 0
+        skipped = 0
         for i in range(from_idx - 1, to_idx):
             entry = self.playlist_entries[i]
             video_id = entry.get("id")
             video_url = entry.get("url") or (f"https://www.youtube.com/watch?v={video_id}" if video_id else "")
             if not video_url:
+                continue
+            if (video_url, key) in existing_active:
+                skipped += 1
                 continue
             title = entry.get("title") or f"video {i + 1}"
             thumbs = entry.get("thumbnails") or []
@@ -651,12 +695,16 @@ class YTDownloaderApp(App):
                 "status": "queued",
             }
             queue.append(job)
+            existing_active.add((video_url, key))
             added += 1
 
         C.write_json(C.QUEUE_FILE, queue)
         C.append_download_log(f"{self.playlist_title}: {added} videos ({label}) - queued")
         self.start_download_service()
-        self.set_status(ar(f"تمت إضافة {added} فيديو من القائمة"))
+        msg = f"تمت إضافة {added} فيديو من القائمة"
+        if skipped:
+            msg += f" (تم تخطي {skipped} موجودين بالفعل)"
+        self.set_status(msg)
 
     # ==============================================================
     # صلاحية "الوصول لكل الملفات" - كـ fallback لو مفيش مجلد SAF مختار
@@ -691,7 +739,7 @@ class YTDownloaderApp(App):
     # ==============================================================
     def on_choose_folder_pressed(self, *_):
         if platform != "android":
-            self.set_status(ar("اختيار المجلد شغال بس على أندرويد"))
+            self.set_status("اختيار المجلد شغال بس على أندرويد")
             return
         try:
             from jnius import autoclass
@@ -719,7 +767,7 @@ class YTDownloaderApp(App):
 
             Activity = autoclass("android.app.Activity")
             if result_code != Activity.RESULT_OK or intent is None:
-                Clock.schedule_once(lambda dt: self.set_status(ar("تم إلغاء اختيار المجلد")))
+                Clock.schedule_once(lambda dt: self.set_status("تم إلغاء اختيار المجلد"))
                 return
 
             Intent = autoclass("android.content.Intent")
@@ -736,7 +784,7 @@ class YTDownloaderApp(App):
             self.storage_uri = uri_str
             C.save_storage_uri(uri_str)
             Clock.schedule_once(lambda dt: self.set_widget_text(self.btn_choose_folder, ar("تم اختيار المجلد")))
-            Clock.schedule_once(lambda dt: self.set_status(ar("تم حفظ مجلد التخزين")))
+            Clock.schedule_once(lambda dt: self.set_status("تم حفظ مجلد التخزين"))
         except Exception as e:
             error_msg = str(e)
             Clock.schedule_once(lambda dt: self.set_status(f"خطأ في حفظ المجلد: {error_msg}"))
@@ -746,7 +794,7 @@ class YTDownloaderApp(App):
     # ==============================================================
     def start_download_service(self):
         if platform != "android":
-            self.set_status(ar("الخدمة شغالة بس على أندرويد"))
+            self.set_status("الخدمة شغالة بس على أندرويد")
             return
         from jnius import autoclass
         PythonActivity = autoclass("org.kivy.android.PythonActivity")
@@ -779,7 +827,7 @@ class YTDownloaderApp(App):
                 widgets = self.download_widgets.pop(job_id)
                 self.downloads_list.remove_widget(widgets["card"])
 
-    def status_text_ar(self, status):
+    def status_word(self, status):
         mapping = {
             "queued": "في الانتظار",
             "downloading": "جاري التحميل",
@@ -790,12 +838,11 @@ class YTDownloaderApp(App):
             "cancelled": "ملغي",
             "error": "خطأ",
         }
-        return ar(mapping.get(status, status))
+        return mapping.get(status, status)
 
     def create_download_card(self, job, status, percent, info):
         job_id = job["id"]
         card = DownloadCard()
-        card.bind(minimum_height=card.setter("height"))
 
         top_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(46), spacing=dp(8))
         thumb = AsyncImage(source=job.get("thumbnail", ""), size_hint=(None, None), size=(dp(40), dp(40)))
@@ -812,11 +859,11 @@ class YTDownloaderApp(App):
         top_row.add_widget(title_lbl)
         card.add_widget(top_row)
 
-        progress = ProgressBar(max=100, value=percent, size_hint=(1, None), height=dp(24))
+        progress = ProgressBar(max=100, value=percent, size_hint=(1, None), height=dp(22))
         card.add_widget(progress)
 
         status_lbl = Label(
-            text=f"{self.status_text_ar(status)} - {percent:.1f}%",
+            text=ar(f"{self.status_word(status)} - {percent:.1f}%"),
             font_size="11sp",
             font_name=FONT_PATH,
             size_hint=(1, None),
@@ -851,9 +898,10 @@ class YTDownloaderApp(App):
     def update_download_card(self, job_id, job, status, percent, info):
         widgets = self.download_widgets[job_id]
         widgets["progress"].value = percent
-        widgets["status_lbl"].text = f"{self.status_text_ar(status)} - {percent:.1f}%"
         if status == "error" and info.get("error"):
-            widgets["status_lbl"].text = ar("خطأ") + f": {info.get('error')[:50]}"
+            widgets["status_lbl"].text = ar(f"خطأ: {info.get('error')[:50]}")
+        else:
+            widgets["status_lbl"].text = ar(f"{self.status_word(status)} - {percent:.1f}%")
         self.apply_card_state(job_id, status, info)
 
     def apply_card_state(self, job_id, status, info):
@@ -906,9 +954,9 @@ class YTDownloaderApp(App):
         if saved_uri:
             self.open_saf_uri(saved_uri)
         elif saved_path:
-            self.set_status(ar("محفوظ في") + f": {saved_path}")
+            self.set_status(f"محفوظ في: {saved_path}")
         else:
-            self.set_status(ar("الملف لسه مش جاهز"))
+            self.set_status("الملف لسه مش جاهز")
 
     def open_saf_uri(self, uri_str):
         try:
@@ -931,7 +979,10 @@ class YTDownloaderApp(App):
 
     # ==============================================================
     def set_status(self, text):
-        self.status_label.text = text
+        # بنشكّل (reshape+bidi) النص هنا مرة واحدة بس، على النص الكامل
+        # بما فيه أي أرقام/إنجليزي مدموجة فيه - عشان كده كل الاستدعاءات
+        # التانية لازم تبعت نص خام من غير ما تنادي ar() بنفسها الأول
+        self.status_label.text = ar(text)
 
     def set_widget_text(self, widget, text):
         widget.text = text
