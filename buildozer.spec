@@ -25,7 +25,16 @@ version = 1.0
 # yt-dlp, requests, certifi are pure python and installable via pip during the p4a build
 # لازم hostpython3 (بايثون البناء) و python3 (بايثون الهدف) يكونوا نفس النسخة بالظبط
 # دي متطلبة أساسية من python-for-android، لو مش متطابقين البناء بيفشل فورًا
-requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android,arabic_reshaper,python-bidi
+# أضفنا "ffmpeg" هنا عشان دمج الصوت مع الفيديو في الجودات اللي بتنزل
+# كملفين منفصلين (720p/1080p). ده recipe بيكرومباي ffmpeg لأندرويد -
+# المسار النهائي للملف التنفيذي بيتحدد وقت التشغيل عن طريق find_ffmpeg()
+# في dl_common.py، وممكن يحتاج تظبيط حسب مخرجات البناء الفعلية عندك.
+requirements = python3==3.11.8,hostpython3==3.11.8,kivy==2.3.0,yt-dlp,requests,certifi,pyjnius,android,arabic_reshaper,python-bidi,ffmpeg
+
+# (bool) Fullscreen
+# False عشان شريط الحالة (الساعة/البطارية) وأزرار التنقل السفلية يفضلوا
+# ظاهرين، بدل ما التطبيق ياخد الشاشة كلها
+fullscreen = 0
 
 # (str) Presplash of the application
 #presplash.filename = %(source.dir)s/data/presplash.png
