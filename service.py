@@ -1,17 +1,6 @@
 # -*- coding: utf-8 -*-
 """
 service.py -> خدمة تحميل خلفية (Foreground Service).
-بتدعم دلوقتي:
-  - تحميل عدة فيديوهات في نفس الوقت (حد أقصى قابل للضبط من الإعدادات)
-  - دمج الصوت مع الفيديو تلقائيًا عن طريق ffmpeg لما يكونوا ملفين منفصلين
-  - إيقاف مؤقت/استكمال آمن (بيسيب ملفات .part متعرفوش تتحذف إلا لما
-    التحميل يخلص بنجاح بالكامل، فمفيش احتمال ملف نص متحمل يتحط مكان
-    النهائي وهو تالف)
-  - إلغاء نظيف لأي تحميل (شغال أو لسه في الانتظار)
-
-الخدمة بتفضل شغالة وبتراقب ملف "قائمة الانتظار" (QUEUE_FILE) باستمرار،
-فأي فيديو جديد تضيفه الواجهة (main.py) بيتلقط تلقائيًا من غير ما نحتاج
-نعيد تشغيل السيرفس من الأول.
 """
 import os
 import glob
@@ -75,6 +64,38 @@ class AbortDownload(Exception):
     pass
 
 
+def resolve_format(job):
+    """
+    لو الفورمات محدد مسبقًا (فيديو مفرد اتحلل كامل في main.py)، نستخدمه
+    زي ما هو. لو الوظيفة دي جاية من قائمة تشغيل (عندها quality_key بس
+    من غير format_selector)، نحلل الفيديو ده دلوقتي ونطبق نفس آلية
+    "أخف حجم في نطاق الجودة" بتاعة back_end.py على الفيديو ده تحديدًا.
+    """
+    if job.get("format_selector"):
+        return job["format_selector"]
+
+    quality_key = job.get("quality_key", "best_audio")
+    if quality_key in ("worst_audio", "best_audio"):
+        return "worstaudio" if quality_key == "worst_audio" else "bestaudio"
+
+    try:
+        probe_opts = {"quiet": True, "no_warnings": True, "noplaylist": True, "cachedir": False}
+        with YoutubeDL(probe_opts) as ydl:
+            info = ydl.extract_info(job["url"], download=False)
+        sorted_audio, video_qualities = C.analyze_formats(info)
+        settings = C.read_settings()
+        use_low_audio = bool(settings.get("pair_low_audio", True))
+        options = C.pick_best_options(sorted_audio, video_qualities, use_low_audio=use_low_audio)
+        chosen = options.get(quality_key)
+        if chosen:
+            return chosen[0]
+    except Exception:
+        pass
+
+    # فولباك عام لو التحليل فشل أو الجودة دي مش متاحة بالظبط لهذا الفيديو
+    return f"bestvideo[height<={quality_key}]+bestaudio/best[height<={quality_key}]"
+
+
 def download_worker(job):
     job_id = job["id"]
     temp_dir = os.path.join(C.TEMP_ROOT, job_id)
@@ -82,8 +103,6 @@ def download_worker(job):
     last_percent = [0.0]
 
     def hook(d):
-        # بنتشيك على أمر إلغاء/إيقاف مؤقت في كل نبضة تقدم - رفع Exception
-        # هنا هو الطريقة اللي yt-dlp بيسمح بيها بمقاطعة تحميل شغال
         reason = abort_flags.get(job_id)
         if reason:
             raise AbortDownload(reason)
@@ -108,11 +127,11 @@ def download_worker(job):
             title=job.get("title", ""),
             thumbnail=job.get("thumbnail", ""),
         )
+
+        format_selector = resolve_format(job)
         ffmpeg_path = C.find_ffmpeg()
         ydl_opts = {
-            "format": job["format_selector"],
-            # اسم الملف ثابت الطول عشان نقدر نلاقيه بسهولة، وبرضه بيحافظ
-            # على نفس الاسم بين محاولة التحميل الأولى ومحاولة الاستكمال
+            "format": format_selector,
             "outtmpl": os.path.join(temp_dir, "%(title).150B.%(ext)s"),
             "merge_output_format": "mp4",
             "progress_hooks": [hook],
@@ -128,9 +147,6 @@ def download_worker(job):
         with YoutubeDL(ydl_opts) as ydl:
             ydl.download([job["url"]])
 
-        # لو الكود وصل هنا يبقى التحميل (والدمج لو حصل) خلص بنجاح 100%
-        # من غير أي مقاطعة، فالملف مضمون سليم ومش هنلمسه إلا دلوقتي.
-        # ده بالظبط اللي كان ناقص قبل كده وبيسبب تلف الملف بعد الاستكمال.
         result_files = [
             f for f in glob.glob(os.path.join(temp_dir, "*"))
             if not f.endswith(".part") and not f.endswith(".ytdl")
@@ -141,12 +157,19 @@ def download_worker(job):
 
         update_status(job_id, status="saving", percent=100.0)
         storage_uri = job.get("storage_uri", "")
+        playlist_name = job.get("playlist_name") or None
+
         if storage_uri:
-            saved_uri = C.copy_to_saf(service, local_path, storage_uri, os.path.basename(local_path))
+            saved_uri = C.copy_to_saf(
+                service, local_path, storage_uri, os.path.basename(local_path), subfolder_name=playlist_name
+            )
             update_status(job_id, status="finished", percent=100.0, saved_uri=saved_uri, saved_path="")
         else:
-            os.makedirs(C.SAVE_DIR, exist_ok=True)
-            final_path = os.path.join(C.SAVE_DIR, os.path.basename(local_path))
+            final_dir = C.SAVE_DIR
+            if playlist_name:
+                final_dir = os.path.join(C.SAVE_DIR, playlist_name)
+            os.makedirs(final_dir, exist_ok=True)
+            final_path = os.path.join(final_dir, os.path.basename(local_path))
             shutil.move(local_path, final_path)
             update_status(job_id, status="finished", percent=100.0, saved_path=final_path, saved_uri="")
 
@@ -162,8 +185,6 @@ def download_worker(job):
             shutil.rmtree(temp_dir, ignore_errors=True)
             C.append_download_log(f"{job.get('title', '')} - cancelled")
         else:
-            # إيقاف مؤقت: مبنمسحش temp_dir خالص عشان ملفات .part تفضل
-            # موجودة، وبكرة لما نكمّل هيبدأ منها بدل ما يحمل من الصفر
             update_status(job_id, status="paused", percent=last_percent[0])
             update_queue_status(job_id, "paused")
     except Exception as e:
@@ -186,7 +207,6 @@ def handle_controls():
         if job_id in active_threads:
             abort_flags[job_id] = action
         elif action == "cancel":
-            # الملف لسه في قائمة الانتظار ومبدأش تحميله، نشيله على طول
             remove_from_queue(job_id)
             update_status(job_id, status="cancelled", percent=0.0)
         else:
@@ -227,8 +247,6 @@ def run():
             else:
                 idle_cycles = 0
 
-            # حوالي 5 ثواني من غير أي شغل - نوقف السيرفس نفسه لتوفير
-            # البطارية. main.py هيعيد تشغيله تاني أول ما يضاف تحميل جديد
             if idle_cycles > 10:
                 break
 
