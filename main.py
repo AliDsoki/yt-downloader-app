@@ -13,14 +13,17 @@ from kivy.config import Config
 # وأزرار التنقل السفلية ظاهرة زي أي تطبيق عادي
 Config.set("graphics", "fullscreen", "0")
 
+from kivy.core.window import Window
+
 from kivy.app import App
 from kivy.lang import Builder
 from kivy.factory import Factory
 from kivy.metrics import dp
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.behaviors import ToggleButtonBehavior
 from kivy.uix.label import Label
 from kivy.uix.button import Button
-from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.textinput import TextInput
 from kivy.uix.image import AsyncImage
 from kivy.uix.progressbar import ProgressBar
@@ -31,7 +34,7 @@ from kivy.uix.tabbedpanel import TabbedPanel, TabbedPanelItem
 from kivy.core.clipboard import Clipboard
 from kivy.clock import Clock
 from kivy.utils import platform
-from kivy.properties import ListProperty
+from kivy.properties import ListProperty, StringProperty
 
 from yt_dlp import YoutubeDL
 
@@ -41,7 +44,7 @@ from bidi.algorithm import get_display
 import dl_common as C
 
 # مسار الخط اللي بيدعم العربي - لازم يكون موجود جوه مجلد assets بجانب main.py
-FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "NotoNaskhArabic-Regular.ttf")
+FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "AppFont.ttf")
 
 
 def ar(text):
@@ -108,14 +111,6 @@ KV = """
             radius: [dp(12), dp(12), 0, 0]
 
 <QualityToggle>:
-    background_normal: ""
-    background_down: ""
-    background_color: 0, 0, 0, 0
-    color: 1, 1, 1, 1
-    bold: True
-    font_name: app.font_path
-    halign: "center"
-    disabled_color: 0.55, 0.55, 0.55, 1
     bg_color: (0.22, 0.62, 0.36, 1) if self.state == "down" else (0.26, 0.26, 0.30, 1)
     canvas.before:
         Color:
@@ -136,6 +131,21 @@ KV = """
             pos: self.x, ((self.y + dp(3)) if self.state == "normal" else self.y) + self.height * 0.5
             size: self.width, self.height * 0.5
             radius: [dp(12), dp(12), 0, 0]
+    Label:
+        text: root.quality_name
+        font_size: "10sp"
+        font_name: app.font_path
+        color: (1, 1, 1, 0.85) if not root.disabled else (0.6, 0.6, 0.6, 0.85)
+        size_hint: None, None
+        size: self.texture_size
+        pos: root.x + dp(6), root.top - self.height - dp(4)
+    Label:
+        text: root.size_text
+        font_size: "14sp"
+        font_name: app.font_path
+        bold: True
+        color: (1, 1, 1, 1) if not root.disabled else (0.6, 0.6, 0.6, 1)
+        center: root.center_x, root.center_y - dp(4)
 
 <SmallButton3D@Button3D>:
     font_size: "13sp"
@@ -143,7 +153,6 @@ KV = """
 <DownloadCard>:
     orientation: "vertical"
     size_hint_y: None
-    height: dp(112)
     padding: dp(10)
     spacing: dp(6)
     canvas.before:
@@ -170,8 +179,10 @@ class Button3D(Button):
     bg_color = ListProperty([0.20, 0.45, 0.85, 1])
 
 
-class QualityToggle(ToggleButton):
+class QualityToggle(ToggleButtonBehavior, FloatLayout):
     bg_color = ListProperty([0.26, 0.26, 0.30, 1])
+    quality_name = StringProperty("")
+    size_text = StringProperty("")
 
 
 class DownloadCard(BoxLayout):
@@ -199,7 +210,12 @@ class YTDownloaderApp(App):
         self.playlist_entries = []
         self.playlist_title = ""
 
-        root = TabbedPanel(do_default_tab=False, tab_width=dp(150))
+        root = TabbedPanel(do_default_tab=False)
+        # التابين لازم ياخدوا نص عرض الشاشة بالتساوي، مش عرض ثابت بيسيب
+        # فراغ جنبهم. بنربط tab_width بنص عرض اللوحة، ونحدثه لو الشاشة
+        # اتدارت (landscape/portrait) أو تغيّر حجمها.
+        root.tab_width = Window.width / 2
+        root.bind(width=lambda inst, w: setattr(inst, "tab_width", w / 2))
 
         download_tab = TabbedPanelItem(text=ar("تحميل"))
         download_tab.font_name = FONT_PATH
@@ -232,7 +248,11 @@ class YTDownloaderApp(App):
         layout.add_widget(self.btn_analyze)
 
         # ---------------- بطاقة نتيجة التحليل + اختيار الجودة ----------------
-        self.analyze_card = Card(orientation="vertical", size_hint=(1, None), height=dp(300))
+        # الارتفاع بيُحسب أوتوماتيك من محتواها (minimum_height) بدل قيمة
+        # ثابتة، لأن القيمة الثابتة القديمة كانت أصغر من المحتوى الفعلي
+        # وده كان بيخلي المحتوى يفيض ويتراكب مع زر التحليل اللي فوقها
+        self.analyze_card = Card(orientation="vertical", size_hint=(1, None))
+        self.analyze_card.bind(minimum_height=self.analyze_card.setter("height"))
 
         header_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(64), spacing=dp(10))
         # الصورة المصغرة بتفضل مخفية تمامًا لحد ما يبقى عندنا صورة فعلية
@@ -261,16 +281,16 @@ class YTDownloaderApp(App):
         self.analyze_card.add_widget(self.playlist_row)
 
         # صف الصوت (2 زرار)
-        row_audio = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(56), spacing=dp(8))
+        row_audio = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
         # صفين فيديو (3 أزرار لكل صف)
-        row_video_1 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(56), spacing=dp(8))
-        row_video_2 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(56), spacing=dp(8))
+        row_video_1 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
+        row_video_2 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
 
         rows_map = [row_audio, row_audio, row_video_1, row_video_1, row_video_1, row_video_2, row_video_2, row_video_2]
         self.quality_buttons = []
         for idx, (key, label) in enumerate(C.QUALITY_LABELS):
-            display_text = label if key.isdigit() else ar(label)
-            btn = QualityToggle(text=display_text, group="quality_select", font_size="13sp")
+            display_name = label if key.isdigit() else ar(label)
+            btn = QualityToggle(group="quality_select", quality_name=display_name)
             btn.quality_key = key
             btn.base_label = label
             btn.quality_index = idx
@@ -511,22 +531,21 @@ class YTDownloaderApp(App):
             self.thumb.size = (0, 0)
             self.thumb.opacity = 0
 
-        # تحديث نصوص أزرار الجودة بالحجم (لو فيديو مفرد) أو من غيره
+        # تحديث لابل الحجم في كل زرار جودة (لو فيديو مفرد) أو من غيره
         # (لو قائمة تشغيل، مش هنعرف حجم كل فيديو مقدمًا)
         for btn in self.quality_buttons:
             key = btn.quality_key
-            display_text = btn.base_label if key.isdigit() else ar(btn.base_label)
             if not self.is_playlist:
                 option = self.quality_data.get(key)
                 if option:
-                    display_text += f"\n{option[1]} MB"
+                    btn.size_text = f"{option[1]} MB"
                     btn.disabled = False
                 else:
-                    display_text += "\n" + ar("غير متاح")
+                    btn.size_text = ar("غير متاح")
                     btn.disabled = True
             else:
+                btn.size_text = ""
                 btn.disabled = False
-            btn.text = display_text
 
         # إظهار/إخفاء صف اختيار نطاق قائمة التشغيل
         if self.is_playlist:
@@ -776,6 +795,7 @@ class YTDownloaderApp(App):
     def create_download_card(self, job, status, percent, info):
         job_id = job["id"]
         card = DownloadCard()
+        card.bind(minimum_height=card.setter("height"))
 
         top_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(46), spacing=dp(8))
         thumb = AsyncImage(source=job.get("thumbnail", ""), size_hint=(None, None), size=(dp(40), dp(40)))
@@ -792,7 +812,7 @@ class YTDownloaderApp(App):
         top_row.add_widget(title_lbl)
         card.add_widget(top_row)
 
-        progress = ProgressBar(max=100, value=percent, size_hint=(1, None), height=dp(14))
+        progress = ProgressBar(max=100, value=percent, size_hint=(1, None), height=dp(24))
         card.add_widget(progress)
 
         status_lbl = Label(
