@@ -110,8 +110,32 @@ KV = """
             size: self.width, self.height * 0.5
             radius: [dp(12), dp(12), 0, 0]
 
-<QualityToggle@Button3D>:
+<QualityToggle>:
+    background_normal: ""
+    background_down: ""
+    background_color: 0, 0, 0, 0
+    color: 1, 1, 1, 1
+    bold: True
     bg_color: (0.22, 0.62, 0.36, 1) if self.state == "down" else (0.26, 0.26, 0.30, 1)
+    canvas.before:
+        Color:
+            rgba: 0, 0, 0, 0.55
+        RoundedRectangle:
+            pos: self.x, (self.y - dp(4)) if self.state == "normal" else (self.y - dp(1))
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: self.bg_color
+        RoundedRectangle:
+            pos: self.x, (self.y + dp(3)) if self.state == "normal" else self.y
+            size: self.size
+            radius: [dp(12)]
+        Color:
+            rgba: 1, 1, 1, 0.16
+        RoundedRectangle:
+            pos: self.x, ((self.y + dp(3)) if self.state == "normal" else self.y) + self.height * 0.5
+            size: self.width, self.height * 0.5
+            radius: [dp(12), dp(12), 0, 0]
 
 <SmallButton3D@Button3D>:
     font_size: "13sp"
@@ -146,12 +170,15 @@ class Button3D(Button):
     bg_color = ListProperty([0.20, 0.45, 0.85, 1])
 
 
+class QualityToggle(ToggleButton):
+    bg_color = ListProperty([0.26, 0.26, 0.30, 1])
+
+
 class DownloadCard(BoxLayout):
     pass
 
 
 Builder.load_string(KV)
-QualityToggle = Factory.QualityToggle
 SmallButton3D = Factory.SmallButton3D
 
 
