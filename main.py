@@ -41,10 +41,12 @@ from bidi.algorithm import get_display
 
 import dl_common as C
 
-# خط Cairo بيغطي العربي + الإنجليزي + الأرقام + الرموز في ملف واحد،
-# فمحتاجينش نخلط خطين مع بعض ولا نستخدم Markup لحل مشكلة المربعات
-# الفاضية - أي نص (عربي أو إنجليزي أو مختلط) هيتعرض صح بنفس الخط ده.
-FONT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "ScheherazadeNew-SemiBold.ttf")
+# اخترت Noto Naskh Arabic SemiBold لأنه قريب في الروح من خط المهند
+# (نَسخي واضح وسميك)، ويدعم العربي + الإنجليزي + الأرقام والرموز في ملف واحد.
+# مهم جدًا: الدالة ar() بتحوّل العربي إلى Arabic Presentation Forms، لذلك لازم الخط
+# يحتوي على الجليفات دي؛ الخط السابق Scheherazade كان بيطلع مربعات مع Kivy في الحالة دي.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+FONT_PATH = os.path.join(APP_DIR, "assets", "NotoNaskhArabic-SemiBold.ttf")
 
 
 def ar(text):
@@ -62,6 +64,12 @@ def ar(text):
         return get_display(reshaped)
     except Exception:
         return text
+
+
+def fit_label(label):
+    """يخلي halign/valign يشتغلوا فعليًا ويحصر النص داخل مساحة الليبل."""
+    label.bind(size=lambda inst, size: setattr(inst, "text_size", size))
+    return label
 
 
 # ------------------------------------------------------------
@@ -94,6 +102,10 @@ KV = """
     color: 1, 1, 1, 1
     bold: True
     font_name: app.font_path
+    halign: "center"
+    valign: "middle"
+    text_size: self.size
+    shorten: True
     canvas.before:
         Color:
             rgba: 0, 0, 0, 0.55
@@ -139,21 +151,22 @@ KV = """
     Label:
         text: root.label_text
         font_name: app.font_path
-        font_size: "10sp"
-        size_hint: (0.82, 0.38)
-        pos_hint: {"x": 0.05, "top": 0.95}
-        halign: "left"
-        valign: "top"
+        font_size: "11sp"
+        bold: True
+        size_hint: (0.92, 0.44)
+        pos_hint: {"center_x": 0.5, "top": 0.93}
+        halign: "center"
+        valign: "middle"
         text_size: self.size
         shorten: True
-        color: 1, 1, 1, 0.75
+        color: 1, 1, 1, 0.90
     Label:
         text: root.size_text
         font_name: app.font_path
-        font_size: "14sp"
+        font_size: "12sp"
         bold: True
-        size_hint: (0.9, 0.5)
-        pos_hint: {"center_x": 0.5, "center_y": 0.36}
+        size_hint: (0.92, 0.40)
+        pos_hint: {"center_x": 0.5, "y": 0.10}
         halign: "center"
         valign: "middle"
         text_size: self.size
@@ -166,7 +179,9 @@ KV = """
 <DownloadCard>:
     orientation: "vertical"
     size_hint_y: None
-    height: dp(120)
+    # كان 120dp أقل من مجموع ارتفاعات العناصر الداخلية، فكان بيسبب
+    # تزاحم/قص للنصوص والأزرار داخل كارت التحميل.
+    height: dp(160)
     padding: dp(10)
     spacing: dp(6)
     canvas.before:
@@ -273,38 +288,53 @@ class YTDownloaderApp(App):
         # (كانت قبل كده بتبان كمربع أبيض فاضي قبل التحليل)
         self.thumb = AsyncImage(size_hint=(None, None), size=(0, 0), opacity=0)
         header_row.add_widget(self.thumb)
-        self.title_label = Label(
+        self.title_label = fit_label(Label(
             text="",
             font_size="15sp",
             font_name=FONT_PATH,
             halign="right",
             valign="middle",
-        )
-        self.title_label.bind(size=lambda inst, s: setattr(inst, "text_size", s))
+            shorten=True,
+        ))
         header_row.add_widget(self.title_label)
         self.analyze_card.add_widget(header_row)
 
         # ---------------- صف اختيار نطاق قائمة تشغيل (يظهر بس لو الرابط قائمة) ----------------
         self.playlist_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=0, spacing=dp(8), opacity=0)
 
-        lbl_from = Label(text=ar("من فيديو رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.38, 1), halign="right", valign="middle")
-        lbl_from.bind(size=lambda inst, s: setattr(inst, "text_size", s))
-        self.playlist_row.add_widget(lbl_from)
-        self.input_from = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", halign="center", size_hint=(0.24, 1))
-        self.playlist_row.add_widget(self.input_from)
+        lbl_from = fit_label(Label(
+            text=ar("من فيديو رقم"), font_name=FONT_PATH, font_size="13sp",
+            size_hint=(0.40, 1), halign="right", valign="middle"
+        ))
+        self.input_from = TextInput(
+            text="1", multiline=False, input_filter="int", font_size="14sp", font_name=FONT_PATH,
+            halign="center", size_hint=(0.20, 1), foreground_color=(1, 1, 1, 1),
+            background_color=(0.10, 0.10, 0.13, 1), cursor_color=(1, 1, 1, 1)
+        )
 
-        lbl_to = Label(text=ar("إلى رقم"), font_name=FONT_PATH, font_size="13sp", size_hint=(0.16, 1), halign="right", valign="middle")
-        lbl_to.bind(size=lambda inst, s: setattr(inst, "text_size", s))
-        self.playlist_row.add_widget(lbl_to)
-        self.input_to = TextInput(text="1", multiline=False, input_filter="int", font_size="14sp", halign="center", size_hint=(0.22, 1))
+        lbl_to = fit_label(Label(
+            text=ar("إلى رقم"), font_name=FONT_PATH, font_size="13sp",
+            size_hint=(0.18, 1), halign="right", valign="middle"
+        ))
+        self.input_to = TextInput(
+            text="1", multiline=False, input_filter="int", font_size="14sp", font_name=FONT_PATH,
+            halign="center", size_hint=(0.22, 1), foreground_color=(1, 1, 1, 1),
+            background_color=(0.10, 0.10, 0.13, 1), cursor_color=(1, 1, 1, 1)
+        )
+
+        # BoxLayout بيرص من الشمال لليمين؛ عشان يظهر الصف بصريًا RTL
+        # لازم نضيف العناصر بالعكس: [إلى] ثم [من].
         self.playlist_row.add_widget(self.input_to)
+        self.playlist_row.add_widget(lbl_to)
+        self.playlist_row.add_widget(self.input_from)
+        self.playlist_row.add_widget(lbl_from)
         self.analyze_card.add_widget(self.playlist_row)
 
         # صف الصوت (2 زرار) وصفين فيديو (3 أزرار لكل صف) - ارتفاع أقل
         # عشان يسيب مساحة أكبر لشاشة التحميلات تحت
-        row_audio = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
-        row_video_1 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
-        row_video_2 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(44), spacing=dp(8))
+        row_audio = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(48), spacing=dp(8))
+        row_video_1 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(48), spacing=dp(8))
+        row_video_2 = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(48), spacing=dp(8))
 
         rows_map = [row_audio, row_audio, row_video_1, row_video_1, row_video_1, row_video_2, row_video_2, row_video_2]
         self.quality_buttons = []
@@ -325,7 +355,7 @@ class YTDownloaderApp(App):
         self.analyze_card.add_widget(row_video_1)
         self.analyze_card.add_widget(row_video_2)
 
-        self.btn_add_queue = Button3D(text=ar("أضف للتحميل"), size_hint=(1, None), height=dp(48))
+        self.btn_add_queue = Button3D(text=ar("أضف للتحميل"), size_hint=(1, None), height=dp(50))
         self.btn_add_queue.bg_color = [0.22, 0.62, 0.36, 1]
         self.btn_add_queue.bind(on_release=self.on_add_to_queue)
         self.analyze_card.add_widget(self.btn_add_queue)
@@ -333,12 +363,17 @@ class YTDownloaderApp(App):
         layout.add_widget(self.analyze_card)
 
         # ---------------- عنوان قائمة التحميلات + زر تصفير السجل ----------------
-        downloads_header = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(36), spacing=dp(8))
-        downloads_header.add_widget(Label(text=ar("التحميلات"), font_name=FONT_PATH, bold=True, size_hint=(0.6, 1)))
-        btn_reset = SmallButton3D(text=ar("تصفير السجل"), size_hint=(0.4, 1))
+        downloads_header = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(38), spacing=dp(8))
+        btn_reset = SmallButton3D(text=ar("تصفير السجل"), size_hint=(0.38, 1))
         btn_reset.bg_color = [0.55, 0.30, 0.15, 1]
         btn_reset.bind(on_release=self.on_reset_downloads)
+        downloads_title = fit_label(Label(
+            text=ar("التحميلات"), font_name=FONT_PATH, bold=True, font_size="16sp",
+            size_hint=(0.62, 1), halign="right", valign="middle"
+        ))
+        # الزر شمال والعنوان يمين، بدل ما يظهروا معكوسين في واجهة عربية.
         downloads_header.add_widget(btn_reset)
+        downloads_header.add_widget(downloads_title)
         layout.add_widget(downloads_header)
 
         # ---------------- بطاقة قائمة التحميلات (Scrollable) ----------------
@@ -348,7 +383,10 @@ class YTDownloaderApp(App):
         scroll.add_widget(self.downloads_list)
         layout.add_widget(scroll)
 
-        self.status_label = Label(text="", font_size="13sp", font_name=FONT_PATH, size_hint=(1, None), height=dp(22))
+        self.status_label = fit_label(Label(
+            text="", font_size="13sp", font_name=FONT_PATH,
+            size_hint=(1, None), height=dp(24), halign="right", valign="middle"
+        ))
         layout.add_widget(self.status_label)
 
         return layout
@@ -363,7 +401,10 @@ class YTDownloaderApp(App):
 
         # ---------------- مجلد التخزين ----------------
         storage_card = Card(orientation="vertical", size_hint=(1, None), height=dp(110))
-        storage_card.add_widget(Label(text=ar("مجلد التخزين"), font_name=FONT_PATH, bold=True, size_hint=(1, None), height=dp(24)))
+        storage_card.add_widget(fit_label(Label(
+            text=ar("مجلد التخزين"), font_name=FONT_PATH, bold=True, font_size="15sp",
+            size_hint=(1, None), height=dp(24), halign="right", valign="middle"
+        )))
         self.btn_choose_folder = Button3D(
             text=ar("تم اختيار المجلد") if self.storage_uri else ar("اختر مجلد التخزين"),
             size_hint=(1, None),
@@ -383,20 +424,24 @@ class YTDownloaderApp(App):
             valign="middle",
             size_hint=(0.8, 1),
         )
-        audio_pair_label.bind(size=lambda inst, s: setattr(inst, "text_size", s))
-        audio_pair_card.add_widget(audio_pair_label)
+        fit_label(audio_pair_label)
         settings_for_switch = C.read_settings()
         self.switch_low_audio = Switch(
             active=bool(settings_for_switch.get("pair_low_audio", True)),
-            size_hint=(0.2, 1),
+            size_hint=(0.20, 1),
         )
         self.switch_low_audio.bind(active=self.on_pair_audio_changed)
+        # BoxLayout شمال->يمين؛ السويتش شمال والشرح يمين في RTL.
         audio_pair_card.add_widget(self.switch_low_audio)
+        audio_pair_card.add_widget(audio_pair_label)
         layout.add_widget(audio_pair_card)
 
         # ---------------- عدد التحميلات المتزامنة ----------------
         concurrency_card = Card(orientation="vertical", size_hint=(1, None), height=dp(110))
-        concurrency_card.add_widget(Label(text=ar("عدد التحميلات في نفس الوقت"), font_name=FONT_PATH, bold=True, size_hint=(1, None), height=dp(24)))
+        concurrency_card.add_widget(fit_label(Label(
+            text=ar("عدد التحميلات في نفس الوقت"), font_name=FONT_PATH, bold=True, font_size="15sp",
+            size_hint=(1, None), height=dp(24), halign="right", valign="middle"
+        )))
         settings = C.read_settings()
         self.spinner_concurrency = Spinner(
             text=str(settings.get("max_concurrent", 2)),
@@ -411,7 +456,10 @@ class YTDownloaderApp(App):
 
         # ---------------- سجل التحميلات ----------------
         dl_log_card = Card(orientation="vertical", size_hint=(1, None), height=dp(240))
-        dl_log_card.add_widget(Label(text=ar("سجل التحميلات"), font_name=FONT_PATH, bold=True, size_hint=(1, None), height=dp(24)))
+        dl_log_card.add_widget(fit_label(Label(
+            text=ar("سجل التحميلات"), font_name=FONT_PATH, bold=True, font_size="15sp",
+            size_hint=(1, None), height=dp(24), halign="right", valign="middle"
+        )))
         dl_log_scroll = ScrollView(size_hint=(1, 1))
         self.download_log_label = Label(
             text="", font_size="12sp", font_name=FONT_PATH, size_hint_y=None, halign="right", valign="top"
@@ -429,7 +477,10 @@ class YTDownloaderApp(App):
 
         # ---------------- سجل الأخطاء ----------------
         err_log_card = Card(orientation="vertical", size_hint=(1, None), height=dp(240))
-        err_log_card.add_widget(Label(text=ar("سجل الأخطاء"), font_name=FONT_PATH, bold=True, size_hint=(1, None), height=dp(24)))
+        err_log_card.add_widget(fit_label(Label(
+            text=ar("سجل الأخطاء"), font_name=FONT_PATH, bold=True, font_size="15sp",
+            size_hint=(1, None), height=dp(24), halign="right", valign="middle"
+        )))
         err_log_scroll = ScrollView(size_hint=(1, 1))
         self.error_log_label = Label(
             text="", font_size="12sp", font_name=FONT_PATH, size_hint_y=None, halign="right", valign="top"
@@ -848,27 +899,29 @@ class YTDownloaderApp(App):
         thumb = AsyncImage(source=job.get("thumbnail", ""), size_hint=(None, None), size=(dp(40), dp(40)))
         top_row.add_widget(thumb)
 
-        title_lbl = Label(
+        title_lbl = fit_label(Label(
             text=ar(job.get("title", "")),
             font_name=FONT_PATH,
             font_size="13sp",
             halign="right",
             valign="middle",
-        )
-        title_lbl.bind(size=lambda inst, s: setattr(inst, "text_size", s))
+            shorten=True,
+        ))
         top_row.add_widget(title_lbl)
         card.add_widget(top_row)
 
         progress = ProgressBar(max=100, value=percent, size_hint=(1, None), height=dp(22))
         card.add_widget(progress)
 
-        status_lbl = Label(
+        status_lbl = fit_label(Label(
             text=ar(f"{self.status_word(status)} - {percent:.1f}%"),
             font_size="11sp",
             font_name=FONT_PATH,
             size_hint=(1, None),
             height=dp(18),
-        )
+            halign="right",
+            valign="middle",
+        ))
         card.add_widget(status_lbl)
 
         buttons_row = BoxLayout(orientation="horizontal", size_hint=(1, None), height=dp(34), spacing=dp(6))
@@ -879,9 +932,10 @@ class YTDownloaderApp(App):
         btn_cancel.bind(on_release=lambda *_: self.on_cancel(job_id))
         btn_open = SmallButton3D(text=ar("فتح"), size_hint=(1, 1), disabled=True)
         btn_open.bind(on_release=lambda *_: self.on_open(job_id))
-        buttons_row.add_widget(btn_pause)
-        buttons_row.add_widget(btn_cancel)
+        # ترتيب بصري RTL: الإجراء الأساسي يمين، ثم إلغاء، ثم فتح شمال.
         buttons_row.add_widget(btn_open)
+        buttons_row.add_widget(btn_cancel)
+        buttons_row.add_widget(btn_pause)
         card.add_widget(buttons_row)
 
         self.downloads_list.add_widget(card)
