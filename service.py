@@ -132,7 +132,7 @@ def download_worker(job):
         ffmpeg_path = C.find_ffmpeg()
         ydl_opts = {
             "format": format_selector,
-            "outtmpl": os.path.join(temp_dir, "%(title).150.%(ext)s"),
+            "outtmpl": os.path.join(temp_dir, "%(title).150s.%(ext)s"),
             "merge_output_format": "mp4",
             "progress_hooks": [hook],
             "continuedl": True,
