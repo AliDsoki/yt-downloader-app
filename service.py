@@ -8,6 +8,7 @@ import shutil
 import threading
 import time
 import traceback
+import unicodedata
 from jnius import autoclass
 from yt_dlp import YoutubeDL
 
@@ -62,6 +63,80 @@ def remove_from_queue(job_id):
 
 class AbortDownload(Exception):
     pass
+
+
+# بعض مزودي ملفات أندرويد، خصوصًا USB/SD بصيغة FAT/exFAT، يرفضوا
+# أسماء ملفات فيها Emoji/رموز خارج BMP أو رموز خاصة، و DocumentsContract.createDocument
+# بيرجع Invalid argument / Failed to touch. لذلك بنحافظ على العربي والإنجليزي
+# والأرقام، ونشيل الرموز الخطرة قبل الحفظ النهائي فقط.
+SAFE_FILENAME_MAX_BYTES = 180
+SAFE_FOLDER_MAX_BYTES = 120
+_SAFE_ASCII_PUNCT = set("-_().[] ")
+_ANDROID_BAD_NAME_CHARS = set('\\/:*?"<>|')
+_INVISIBLE_OR_FORMAT_CHARS = {
+    "\u200b", "\u200c", "\u200d", "\u200e", "\u200f",
+    "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+    "\ufeff",
+}
+
+
+def _trim_component_to_bytes(text, max_bytes):
+    text = text.strip(" ._-\t\n\r")
+    while text and len(text.encode("utf-8")) > max_bytes:
+        text = text[:-1].rstrip(" ._-")
+    return text
+
+
+def safe_storage_component(text, fallback="download", max_bytes=SAFE_FILENAME_MAX_BYTES):
+    """
+    اسم آمن للتخزين الخارجي/SAF: يحافظ على الحروف العربية واللاتينية
+    والأرقام، ويمنع Emoji والرموز الخاصة اللي بتكسر createDocument.
+    """
+    text = unicodedata.normalize("NFKC", str(text or ""))
+    out = []
+    last_space = False
+
+    for ch in text:
+        code = ord(ch)
+        cat = unicodedata.category(ch)
+
+        # FAT/exFAT على أجهزة كثيرة لا يقبل surrogate/non-BMP emoji.
+        if code > 0xFFFF:
+            ch = " "
+        elif ch in _ANDROID_BAD_NAME_CHARS or ch in _INVISIBLE_OR_FORMAT_CHARS:
+            ch = " "
+        elif cat in ("Cs", "Co", "Cc", "Cf"):
+            ch = " "
+        elif cat.startswith(("L", "M", "N")) or ch in _SAFE_ASCII_PUNCT:
+            pass
+        else:
+            # أي Symbol/Punctuation غريب، ومنه القلوب والورود، يتحول لمسافة.
+            ch = " "
+
+        if ch.isspace():
+            if not last_space:
+                out.append(" ")
+                last_space = True
+        else:
+            out.append(ch)
+            last_space = False
+
+    safe = "".join(out)
+    safe = _trim_component_to_bytes(safe, max_bytes)
+    return safe or fallback
+
+
+def safe_storage_filename(filename, fallback_base="download"):
+    base, ext = os.path.splitext(str(filename or ""))
+    ext = ext.lower()
+
+    # الامتداد نفسه نخليه ASCII بسيط فقط.
+    if not ext or len(ext) > 10 or any(not (c.isascii() and (c.isalnum() or c == ".")) for c in ext):
+        ext = ""
+
+    max_base_bytes = max(24, SAFE_FILENAME_MAX_BYTES - len(ext.encode("utf-8")))
+    safe_base = safe_storage_component(base, fallback=fallback_base, max_bytes=max_base_bytes)
+    return safe_base + ext
 
 
 def resolve_format(job):
@@ -132,7 +207,7 @@ def download_worker(job):
         ffmpeg_path = C.find_ffmpeg()
         ydl_opts = {
             "format": format_selector,
-            "outtmpl": os.path.join(temp_dir, "%(title).150s.%(ext)s"),
+            "outtmpl": os.path.join(temp_dir, "%(title).150B.%(ext)s"),
             "merge_output_format": "mp4",
             "progress_hooks": [hook],
             "continuedl": True,
@@ -171,17 +246,22 @@ def download_worker(job):
         storage_uri = job.get("storage_uri", "")
         playlist_name = job.get("playlist_name") or None
 
+        safe_filename = safe_storage_filename(os.path.basename(local_path), fallback_base=job_id)
+        safe_playlist_name = safe_storage_component(
+            playlist_name, fallback="Playlist", max_bytes=SAFE_FOLDER_MAX_BYTES
+        ) if playlist_name else None
+
         if storage_uri:
             saved_uri = C.copy_to_saf(
-                service, local_path, storage_uri, os.path.basename(local_path), subfolder_name=playlist_name
+                service, local_path, storage_uri, safe_filename, subfolder_name=safe_playlist_name
             )
             update_status(job_id, status="finished", percent=100.0, saved_uri=saved_uri, saved_path="")
         else:
             final_dir = C.SAVE_DIR
-            if playlist_name:
-                final_dir = os.path.join(C.SAVE_DIR, playlist_name)
+            if safe_playlist_name:
+                final_dir = os.path.join(C.SAVE_DIR, safe_playlist_name)
             os.makedirs(final_dir, exist_ok=True)
-            final_path = os.path.join(final_dir, os.path.basename(local_path))
+            final_path = os.path.join(final_dir, safe_filename)
             shutil.move(local_path, final_path)
             update_status(job_id, status="finished", percent=100.0, saved_path=final_path, saved_uri="")
 
